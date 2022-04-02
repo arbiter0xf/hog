@@ -23,7 +23,8 @@ function setup_limine() {
 		mtools \
 		autoconf \
 		automake \
-		texinfo
+		texinfo \
+		xorriso
 
 	git clone ${limine_url} ${limine_absolute}
 
