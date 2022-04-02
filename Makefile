@@ -47,8 +47,11 @@ override INTERNALLDFLAGS :=    \
 	-zmax-page-size=0x1000 \
 	-static
 
-.PHONY: all deploy kernel iso
+.PHONY: all clean deploy kernel iso
 all: iso
+
+clean:
+	rm -rf $(KERNEL_ELF) $(OBJ) $(HEADER_DEPS)
 
 kernel: $(KERNEL_ELF)
 
