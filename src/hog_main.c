@@ -24,8 +24,6 @@ void _start(struct stivale2_struct* stivale2_struct)
     char cpuid_supported_hex_str[HEX_STR_SIZE_32] = {0};
 
     cpuid_supported = is_cpuid_supported();
-    (void)cpuid_supported;
-
     uint32_to_hex_str(cpuid_supported, cpuid_supported_hex_str);
 
     tag_terminal = stivale2_get_tag(stivale2_struct, STIVALE2_STRUCT_TAG_TERMINAL_ID);
