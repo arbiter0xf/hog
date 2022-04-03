@@ -61,6 +61,7 @@ void halt_execution(void)
 }
 
 // TODO comments
+// https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
 void _start(struct stivale2_struct* stivale2_struct)
 {
     struct stivale2_struct_tag_terminal* tag_terminal = 0;
@@ -72,7 +73,7 @@ void _start(struct stivale2_struct* stivale2_struct)
     cpuid_supported = is_cpuid_supported();
     (void)cpuid_supported;
 
-    uint32_to_hex_str(33, cpuid_supported_hex_str);
+    uint32_to_hex_str(cpuid_supported, cpuid_supported_hex_str);
 
     tag_terminal = stivale2_get_tag(stivale2_struct, STIVALE2_STRUCT_TAG_TERMINAL_ID);
     if (NULL == tag_terminal) {
