@@ -13,18 +13,10 @@ void halt_execution(void)
     }
 }
 
-// TODO comments
-// https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
-void _start(struct stivale2_struct* stivale2_struct)
+void (*get_term_write_function(struct stivale2_struct* stivale2_struct))(const char* str, size_t len)
 {
     struct stivale2_struct_tag_terminal* tag_terminal = 0;
-    void (*term_write)(const char* str, size_t len) = 0;
     void* terminal_write_ptr = 0;
-    uint32_t cpuid_supported = 0;
-    char cpuid_supported_hex_str[HEX_STR_SIZE_32] = {0};
-
-    cpuid_supported = is_cpuid_supported();
-    uint32_to_hex_str(cpuid_supported, cpuid_supported_hex_str);
 
     tag_terminal = stivale2_get_tag(stivale2_struct, STIVALE2_STRUCT_TAG_TERMINAL_ID);
     if (NULL == tag_terminal) {
@@ -32,7 +24,22 @@ void _start(struct stivale2_struct* stivale2_struct)
     }
 
     terminal_write_ptr = (void*) tag_terminal->term_write;
-    term_write = terminal_write_ptr;
+
+    return terminal_write_ptr;
+}
+
+// TODO comments
+// https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
+void _start(struct stivale2_struct* stivale2_struct)
+{
+    void (*term_write)(const char* str, size_t len) = 0;
+    uint32_t cpuid_supported = 0;
+    char cpuid_supported_hex_str[HEX_STR_SIZE_32] = {0};
+
+    cpuid_supported = is_cpuid_supported();
+    uint32_to_hex_str(cpuid_supported, cpuid_supported_hex_str);
+
+    term_write = get_term_write_function(stivale2_struct);
 
     term_write("Terminal test print\n", 20);
     term_write("CPUID supported: ", 17);
