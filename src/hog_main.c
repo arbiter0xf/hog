@@ -141,7 +141,14 @@ static uint8_t ps2_controller_initialize(void)
     return RET_OK;
 }
 
-#if 0
+static void read_ps2_response_hex(char* hex_str)
+{
+    uint8_t response = -1;
+
+    response = usb_legacy_ps2_controller_read_response_byte();
+    uint32_to_hex_str(response, hex_str);
+}
+
 static void busyloop()
 {
     const uint32_t busyloop_max = 250000000;
@@ -149,25 +156,38 @@ static void busyloop()
     // Use volatile for preventing compiler optimizing the loop away.
     for (volatile uint32_t i = 0; i < busyloop_max; i++) { }
 }
-#endif
 
 // TODO comments
 // https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
 void _start(struct stivale2_struct* stivale2_struct)
 {
+    uint8_t ret = RET_ERR;
+    uint8_t ps2_init_ok = 0;
+    char ps2_input_hex_str[HEX_STR_SIZE_32] = {0};
     initialize_terminal_printing(stivale2_struct);
     term_write("Terminal test print\n", 20);
 
     detect_cpuid_support();
 
-    ps2_controller_initialize();
-
-#if 0
-    for (;;) {
-            busyloop();
-            term_write("a", 1);
+    ret = ps2_controller_initialize();
+    if (RET_OK == ret) {
+        term_write("PS/2 successfully initialized\n", 30);
+        ps2_init_ok = 1;
     }
-#endif
 
+    if (ps2_init_ok) {
+        term_write("Polling for PS/2 input...\n", 26);
+
+        for (;;) {
+            busyloop();
+
+            // Try to read and display data sent by PS/2 device
+            read_ps2_response_hex(ps2_input_hex_str);
+            term_write(ps2_input_hex_str, 8);
+            term_write("\n", 1);
+        }
+    }
+
+    term_write("Halting execution\n", 18);
     halt_execution();
 }
