@@ -1,62 +1,18 @@
-override KERNEL_ELF := hog.elf
-override HOG_ISO := hog.iso
+include vars.mk
 
-CC := cc
-LD := ld
-
-CFLAGS ?= -O2 -g -Wall -Wextra -pipe
-LDFLAGS ?=
-
-override CFILES := $(shell find ./ -type f -name '*.c')
-override OBJ := $(CFILES:.c=.o)
-override HEADER_DEPS := $(CFILES:.c=.d)
-
-override LINKER_SCRIPT_ABS := src/linker.ld
 override EMULATOR_ROOT := /mnt/f/my/tools/qemu/
-
-override HOG_DEPENDENCIES := ../hog_dependencies
+override HOG_DEPENDENCIES := $(PROJECT_ROOT)/../hog_dependencies
 override LIMINE_ROOT := $(HOG_DEPENDENCIES)/limine
 override LIMINE_DEPLOY := $(LIMINE_ROOT)/bin/limine-s2deploy
-override ISO_OUT := out/iso
-override ISO_DEPS_LIMINE_CFG := src/limine.cfg
+
+override ISO_OUT := $(PROJECT_ROOT)/out/iso
+override ISO_DEPS_LIMINE_CFG := $(PROJECT_ROOT)/src/limine.cfg
 override ISO_DEPS_LIMINE_FILES :=			\
 	$(LIMINE_ROOT)/bin/limine.sys			\
 	$(LIMINE_ROOT)/bin/limine-cd.bin		\
 	$(LIMINE_ROOT)/bin/limine-eltorito-efi.bin
-override HOG_ISO_ABS := $(ISO_OUT)/$(HOG_ISO)
-
-override INTERNALCFLAGS :=   \
-	-Iinclude            \
-	-std=gnu11           \
-	-ffreestanding       \
-	-fno-stack-protector \
-	-fno-pic             \
-	-mabi=sysv           \
-	-mno-80387           \
-	-mno-mmx             \
-	-mno-3dnow           \
-	-mno-sse             \
-	-mno-sse2            \
-	-mno-red-zone        \
-	-mcmodel=kernel      \
-	-MMD
-
-override INTERNALLDFLAGS :=    \
-	-T$(LINKER_SCRIPT_ABS) \
-	-nostdlib              \
-	-zmax-page-size=0x1000 \
-	-static
-
-.PHONY: all clean deploy kernel iso
-all: iso
-
-clean:
-	rm -rf $(KERNEL_ELF) $(OBJ) $(HEADER_DEPS)
-
-kernel: $(KERNEL_ELF)
-
-deploy: iso
-	cp $(HOG_ISO_ABS) $(EMULATOR_ROOT)
+override HOG_ISO := hog.iso
+override HOG_ISO_PATH := $(ISO_OUT)/$(HOG_ISO)
 
 iso: kernel
 	rm -rf $(ISO_OUT)
@@ -72,15 +28,11 @@ iso: kernel
 		-efi-boot-part --efi-boot-image		\
 		--protective-msdos-label		\
 		$(ISO_OUT)				\
-		-o $(HOG_ISO_ABS)
-	$(LIMINE_DEPLOY) $(HOG_ISO_ABS)
+		-o $(HOG_ISO_PATH)
+	$(LIMINE_DEPLOY) $(HOG_ISO_PATH)
 
-include/stivale2.h:
-	curl https://raw.githubusercontent.com/stivale/stivale/master/stivale2.h -o $@
+deploy: iso
+	cp $(HOG_ISO_PATH) $(EMULATOR_ROOT)
 
-$(KERNEL_ELF): $(OBJ)
-	$(LD) $(OBJ) $(LDFLAGS) $(INTERNALLDFLAGS) -o $@
-
--include $(HEADER_DEPS)
-%.o: %.c include/stivale2.h
-	$(CC) $(CFLAGS) $(INTERNALCFLAGS) -c $< -o $@
+kernel:
+	make -C src all

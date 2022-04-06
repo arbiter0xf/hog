@@ -24,7 +24,8 @@ function setup_limine() {
 		autoconf \
 		automake \
 		texinfo \
-		xorriso
+		xorriso \
+		nasm
 
 	git clone ${limine_url} ${limine_absolute}
 
