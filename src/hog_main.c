@@ -4,7 +4,21 @@
 #include <hog_stivale2.h>
 #include <hog_util.h>
 
+#define RET_OK 0
+#define RET_ERR -1
+
+#define PS2_CONTROLLER_TEST_RESPONSE_PASS 0x55
+#define PS2_CONTROLLER_TEST_RESPONSE_FAIL 0xFC
+#define PS2_PORT_TEST_RESPONSE_PASS 0
+#define PS2_TEST_PASS 0
+#define PS2_TEST_FAIL 1
+#define PS2_TEST_RUN_UNSUCCESSFUL 2
+
 extern int is_cpuid_supported(void);
+extern void usb_legacy_ps2_controller_write_control_byte_aa(void);
+extern uint8_t usb_legacy_ps2_controller_read_response_byte(void);
+extern void usb_legacy_ps2_controller_enable_first_port(void);
+extern void usb_legacy_ps2_controller_write_control_byte_ab(void);
 
 static void (*term_write)(const char* str, size_t len) = 0;
 
@@ -48,14 +62,132 @@ static void initialize_terminal_printing(struct stivale2_struct* stivale2_struct
     term_write = get_term_write_function(stivale2_struct);
 }
 
+static uint8_t test_ps2_controller(void)
+{
+    uint8_t response = -1;
+
+    term_write("Testing PS/2 controller...", 27);
+
+    usb_legacy_ps2_controller_write_control_byte_aa();
+    response = usb_legacy_ps2_controller_read_response_byte();
+
+    if (PS2_CONTROLLER_TEST_RESPONSE_PASS == response) {
+        term_write(": TEST PASS\n", 12);
+        return PS2_TEST_PASS;
+    }
+
+    if (PS2_CONTROLLER_TEST_RESPONSE_FAIL == response) {
+        term_write(": TEST FAIL\n", 12);
+        return PS2_TEST_FAIL;
+    }
+
+    term_write(": TEST RUN UNSUCCESSFUL\n", 24);
+    return PS2_TEST_RUN_UNSUCCESSFUL;
+}
+
+static void ps2_controller_enable_first_port(void)
+{
+    term_write("Enabling PS/2 first port\n", 25);
+    usb_legacy_ps2_controller_enable_first_port();
+}
+
+/*
+ * Test first PS/2 port
+ * Control byte for running test: 0xAB
+ * Return values:
+ *       -> 0x00 test passed
+ *       -> 0x01 clock line stuck low
+ *       -> 0x02 clock line stuck high
+ *       -> 0x03 data line stuck low
+ *       -> 0x04 data line stuck high
+ */
+static uint8_t ps2_test_first_port(void) {
+    uint8_t response = -1;
+    char response_hex_str[HEX_STR_SIZE_32];
+
+    term_write("Testing PS/2 first port...", 26);
+
+    usb_legacy_ps2_controller_write_control_byte_ab();
+    response = usb_legacy_ps2_controller_read_response_byte();
+    uint32_to_hex_str(response, response_hex_str);
+
+    if (PS2_PORT_TEST_RESPONSE_PASS == response) {
+        term_write(": TEST PASS\n", 12);
+        return PS2_TEST_PASS;
+    }
+
+    term_write(": TEST FAIL: ", 13);
+    term_write(response_hex_str, 8);
+    term_write("\n", 1);
+    return PS2_TEST_FAIL;
+}
+
+static uint8_t ps2_controller_initialize(void)
+{
+    uint8_t test_result = -1;
+    term_write("Initializing PS/2\n", 18);
+
+    test_result = test_ps2_controller();
+    if (PS2_TEST_PASS != test_result) {
+        return RET_ERR;
+    }
+
+    ps2_controller_enable_first_port();
+    ps2_test_first_port();
+
+    // TODO disable second port
+    // term_write("", 18);
+
+    return RET_OK;
+}
+
+static void read_ps2_response_hex(char* hex_str)
+{
+    uint8_t response = -1;
+
+    response = usb_legacy_ps2_controller_read_response_byte();
+    uint32_to_hex_str(response, hex_str);
+}
+
+static void busyloop()
+{
+    const uint32_t busyloop_max = 250000000;
+
+    // Use volatile for preventing compiler optimizing the loop away.
+    for (volatile uint32_t i = 0; i < busyloop_max; i++) { }
+}
+
 // TODO comments
 // https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
 void _start(struct stivale2_struct* stivale2_struct)
 {
+    uint8_t ret = RET_ERR;
+    uint8_t ps2_init_ok = 0;
+    char ps2_input_hex_str[HEX_STR_SIZE_32] = {0};
     initialize_terminal_printing(stivale2_struct);
     term_write("Terminal test print\n", 20);
 
     detect_cpuid_support();
 
+    ret = ps2_controller_initialize();
+    if (RET_OK == ret) {
+        term_write("PS/2 successfully initialized\n", 30);
+        ps2_init_ok = 1;
+    }
+
+    if (ps2_init_ok) {
+        term_write("Polling for PS/2 input...\n", 26);
+
+        for (;;) {
+            busyloop();
+
+            // Try to read and display data sent by PS/2 device
+            read_ps2_response_hex(ps2_input_hex_str);
+            term_write(ps2_input_hex_str, 8);
+            term_write("\n", 1);
+        }
+    }
+
+    term_write("Halting execution\n", 18);
     halt_execution();
 }
