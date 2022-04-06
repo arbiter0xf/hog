@@ -4,8 +4,12 @@
 #include <hog_stivale2.h>
 #include <hog_util.h>
 
+#define RET_OK 0
+#define RET_ERR -1
+
 #define PS2_CONTROLLER_TEST_RESPONSE_PASS 0x55
 #define PS2_CONTROLLER_TEST_RESPONSE_FAIL 0xFC
+#define PS2_PORT_TEST_RESPONSE_PASS 0
 #define PS2_TEST_PASS 0
 #define PS2_TEST_FAIL 1
 #define PS2_TEST_RUN_UNSUCCESSFUL 2
@@ -13,6 +17,8 @@
 extern int is_cpuid_supported(void);
 extern void usb_legacy_ps2_controller_write_control_byte_aa(void);
 extern uint8_t usb_legacy_ps2_controller_read_response_byte(void);
+extern void usb_legacy_ps2_controller_enable_first_port(void);
+extern void usb_legacy_ps2_controller_write_control_byte_ab(void);
 
 static void (*term_write)(const char* str, size_t len) = 0;
 
@@ -79,6 +85,62 @@ static uint8_t test_ps2_controller(void)
     return PS2_TEST_RUN_UNSUCCESSFUL;
 }
 
+static void ps2_controller_enable_first_port(void)
+{
+    term_write("Enabling PS/2 first port\n", 25);
+    usb_legacy_ps2_controller_enable_first_port();
+}
+
+/*
+ * Test first PS/2 port
+ * Control byte for running test: 0xAB
+ * Return values:
+ *       -> 0x00 test passed
+ *       -> 0x01 clock line stuck low
+ *       -> 0x02 clock line stuck high
+ *       -> 0x03 data line stuck low
+ *       -> 0x04 data line stuck high
+ */
+static uint8_t ps2_test_first_port(void) {
+    uint8_t response = -1;
+    char response_hex_str[HEX_STR_SIZE_32];
+
+    term_write("Testing PS/2 first port...", 26);
+
+    usb_legacy_ps2_controller_write_control_byte_ab();
+    response = usb_legacy_ps2_controller_read_response_byte();
+    uint32_to_hex_str(response, response_hex_str);
+
+    if (PS2_PORT_TEST_RESPONSE_PASS == response) {
+        term_write(": TEST PASS\n", 12);
+        return PS2_TEST_PASS;
+    }
+
+    term_write(": TEST FAIL: ", 13);
+    term_write(response_hex_str, 8);
+    term_write("\n", 1);
+    return PS2_TEST_FAIL;
+}
+
+static uint8_t ps2_controller_initialize(void)
+{
+    uint8_t test_result = -1;
+    term_write("Initializing PS/2\n", 18);
+
+    test_result = test_ps2_controller();
+    if (PS2_TEST_PASS != test_result) {
+        return RET_ERR;
+    }
+
+    ps2_controller_enable_first_port();
+    ps2_test_first_port();
+
+    // TODO disable second port
+    // term_write("", 18);
+
+    return RET_OK;
+}
+
 #if 0
 static void busyloop()
 {
@@ -98,7 +160,7 @@ void _start(struct stivale2_struct* stivale2_struct)
 
     detect_cpuid_support();
 
-    test_ps2_controller();
+    ps2_controller_initialize();
 
 #if 0
     for (;;) {
