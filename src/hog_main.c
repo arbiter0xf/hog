@@ -19,6 +19,7 @@ extern void usb_legacy_ps2_controller_write_control_byte_aa(void);
 extern uint8_t usb_legacy_ps2_controller_read_response_byte(void);
 extern void usb_legacy_ps2_controller_enable_first_port(void);
 extern void usb_legacy_ps2_controller_write_control_byte_ab(void);
+extern uint32_t get_register_64_value_cr3(void);
 
 static void (*term_write)(const char* str, size_t len) = 0;
 
@@ -157,6 +158,51 @@ static void busyloop()
     for (volatile uint32_t i = 0; i < busyloop_max; i++) { }
 }
 
+static void dump_registers(void)
+{
+    uint64_t cr3_value = get_register_64_value_cr3();
+    char cr3_value_hex_str[HEX_STR_SIZE_64] = {0};
+    uint64_to_hex_str(cr3_value, cr3_value_hex_str);
+    term_write("Printing register values\n", 25);
+    term_write("CR3: ", 5);
+    term_write(cr3_value_hex_str, 16);
+    term_write("\n", 1);
+}
+
+static void dump_paging(struct stivale2_struct_tag_hhdm* tag_hhdm)
+{
+    uint64_t cr3_value = get_register_64_value_cr3();
+    uint64_t* pml4_base_virtual = (uint64_t*)
+        (tag_hhdm->addr +
+        (cr3_value & ~0xfff));
+    char pml4_base_virtual_hex_str[HEX_STR_SIZE_64] = {0};
+    char pml4_entry_address_hex_str[HEX_STR_SIZE_64] = {0};
+    char pml4_entry_value_hex_str[HEX_STR_SIZE_64] = {0};
+
+    uint64_to_hex_str(
+            (uint64_t) pml4_base_virtual,
+            pml4_base_virtual_hex_str);
+    term_write("PML4 base (virtual): ", 21);
+    term_write(pml4_base_virtual_hex_str, 16);
+    term_write("\n", 1);
+
+    term_write("Initial non-zero PML4 entries: \n", 32);
+    const uint16_t entries_max = 512;
+    for (uint16_t i = 0; i < entries_max; i++) {
+        const uint64_t* pml4_entry_address = pml4_base_virtual + i;
+
+        if (0 != *pml4_entry_address) {
+            uint64_to_hex_str((uint64_t) pml4_entry_address, pml4_entry_address_hex_str);
+            uint64_to_hex_str(*pml4_entry_address, pml4_entry_value_hex_str);
+
+            term_write(pml4_entry_address_hex_str, 16);
+            term_write(": ", 2);
+            term_write(pml4_entry_value_hex_str, 16);
+            term_write("\n", 1);
+        }
+    }
+}
+
 // TODO comments
 // https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
 void _start(struct stivale2_struct* stivale2_struct)
@@ -164,6 +210,8 @@ void _start(struct stivale2_struct* stivale2_struct)
     uint8_t ret = RET_ERR;
     uint8_t ps2_init_ok = 0;
     char ps2_input_hex_str[HEX_STR_SIZE_32] = {0};
+    char hhdm_address_hex_str[HEX_STR_SIZE_64] = {0};
+    struct stivale2_struct_tag_hhdm* tag_hhdm = 0;
     initialize_terminal_printing(stivale2_struct);
     term_write("Terminal test print\n", 20);
 
@@ -174,6 +222,21 @@ void _start(struct stivale2_struct* stivale2_struct)
         term_write("PS/2 successfully initialized\n", 30);
         ps2_init_ok = 1;
     }
+
+    tag_hhdm = stivale2_get_tag(stivale2_struct, STIVALE2_STRUCT_TAG_HHDM_ID);
+    if (NULL == tag_hhdm) {
+        term_write("Failed to get HHDM tag. Halting...\n", 35);
+        halt_execution();
+    }
+
+    dump_registers();
+
+    uint64_to_hex_str(tag_hhdm->addr, hhdm_address_hex_str);
+    term_write("HHDM address: ", 14);
+    term_write(hhdm_address_hex_str, 16);
+    term_write("\n", 1);
+
+    dump_paging(tag_hhdm);
 
     if (ps2_init_ok) {
         term_write("Polling for PS/2 input...\n", 26);

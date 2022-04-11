@@ -1,5 +1,26 @@
 #include <hog_util.h>
 
+void uint64_to_hex_str(const uint64_t num, char* str)
+{
+    uint64_t mask = 0xf;
+    uint8_t shift = 60;
+
+    mask = mask << 60;
+    for (uint8_t i = 0; i < HEX_STR_SIZE_64; i++) {
+        str[i] = (char) ((num & mask) >> shift);
+        mask = mask >> 4;
+        shift = shift - 4;
+    }
+
+    for (uint8_t i = 0; i < HEX_STR_SIZE_64; i++) {
+        if (str[i] < 10) {
+            str[i] += '0';
+        } else {
+            str[i] = 'a' + str[i] - 10;
+        }
+    }
+}
+
 void uint32_to_hex_str(const uint32_t num, char* str)
 {
     str[0] = (char) ((num & 0xf0000000) >> 28);
