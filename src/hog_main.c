@@ -14,12 +14,26 @@
 #define PS2_TEST_FAIL 1
 #define PS2_TEST_RUN_UNSUCCESSFUL 2
 
+#define TERM_WRITE_STR(str) \
+	term_write(str, strlen(str))
+
 extern int is_cpuid_supported(void);
 extern void usb_legacy_ps2_controller_write_control_byte_aa(void);
 extern uint8_t usb_legacy_ps2_controller_read_response_byte(void);
 extern void usb_legacy_ps2_controller_enable_first_port(void);
 extern void usb_legacy_ps2_controller_write_control_byte_ab(void);
 extern uint32_t get_register_64_value_cr3(void);
+
+enum stivale2_mmap_type {
+    MMAP_USABLE                 = 1,
+    MMAP_RESERVED               = 2,
+    ACPI_RECLAIMABLE            = 3,
+    ACPI_NVS                    = 4,
+    BAD_MEMORY                  = 5,
+    BOOTLOADER_RECLAIMABLE      = 0x1000,
+    KERNEL_AND_MODULES          = 0x1001,
+    FRAMEBUFFER                 = 0x1002
+};
 
 static void (*term_write)(const char* str, size_t len) = 0;
 
@@ -203,6 +217,40 @@ static void dump_paging(struct stivale2_struct_tag_hhdm* tag_hhdm)
     }
 }
 
+static void add_physical_memory_to_pool(struct stivale2_mmap_entry* memmap_entry)
+{
+    char hex_str_base[HEX_STR_SIZE_64] = {0};
+    char hex_str_length[HEX_STR_SIZE_64] = {0};
+
+    uint64_to_hex_str(memmap_entry->base, hex_str_base);
+    uint64_to_hex_str(memmap_entry->length, hex_str_length);
+
+    TERM_WRITE_STR("BASE: ");
+    TERM_WRITE_STR(hex_str_base);
+    TERM_WRITE_STR(", LEN: ");
+    TERM_WRITE_STR(hex_str_length);
+    TERM_WRITE_STR("\n");
+}
+
+static void calculate_free_physical_memory(struct stivale2_struct* stivale2_struct)
+{
+    struct stivale2_struct_tag_memmap* tag_memmap = 0;
+
+    TERM_WRITE_STR("Calculating free physical memory\n");
+
+    tag_memmap = stivale2_get_tag(stivale2_struct, STIVALE2_STRUCT_TAG_MEMMAP_ID);
+    if (NULL == tag_memmap) {
+        term_write("Failed to get memory map tag. Halting...\n", 35);
+        halt_execution();
+    }
+
+    for(uint64_t i = 0; i < tag_memmap->entries; i++) {
+        if (MMAP_USABLE == tag_memmap->memmap[i].type) {
+            add_physical_memory_to_pool(&(tag_memmap->memmap[i]));
+        }
+    }
+}
+
 // TODO comments
 // https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
 void _start(struct stivale2_struct* stivale2_struct)
@@ -237,6 +285,8 @@ void _start(struct stivale2_struct* stivale2_struct)
     term_write("\n", 1);
 
     dump_paging(tag_hhdm);
+
+    calculate_free_physical_memory(stivale2_struct);
 
     if (ps2_init_ok) {
         term_write("Polling for PS/2 input...\n", 26);
