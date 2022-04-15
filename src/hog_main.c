@@ -5,7 +5,7 @@
 #include <hog_util.h>
 
 #define RET_OK 0
-#define RET_ERR -1
+#define RET_ERR 1
 
 #define PS2_CONTROLLER_TEST_RESPONSE_PASS 0x55
 #define PS2_CONTROLLER_TEST_RESPONSE_FAIL 0xFC
@@ -13,6 +13,15 @@
 #define PS2_TEST_PASS 0
 #define PS2_TEST_FAIL 1
 #define PS2_TEST_RUN_UNSUCCESSFUL 2
+
+// Target 4KiB pages (page frames). Support 4GiB physical memory. Each page
+// frame base accounts for 4096 bytes when targeting 4KiB pages.
+// Then 4096 * 1024 * 1024 produces 4GiB.
+//
+// Limine panicked when trying to allocate memory for page frame bases for
+// 128GiB physical memory.
+#define PAGE_FRAME_BASES 1024 * 1024
+#define PAGE_BYTES 4096
 
 #define TERM_WRITE_STR(str) \
 	term_write(str, strlen(str))
@@ -36,6 +45,9 @@ enum stivale2_mmap_type {
 };
 
 static void (*term_write)(const char* str, size_t len) = 0;
+
+static uint64_t stack_free_page_frame_bases_top = 0;
+static uint64_t stack_free_page_frame_bases[PAGE_FRAME_BASES] = {0};
 
 static void halt_execution(void)
 {
@@ -217,8 +229,26 @@ static void dump_paging(struct stivale2_struct_tag_hhdm* tag_hhdm)
     }
 }
 
+static uint64_t get_free_physical_memory_bytes(void)
+{
+    return stack_free_page_frame_bases_top * PAGE_BYTES;
+}
+
+static uint32_t push_address_to_stack_free_page_frame_bases(uint64_t phys_address)
+{
+    if (sizeof(stack_free_page_frame_bases) <= stack_free_page_frame_bases_top) {
+        return RET_ERR;
+    }
+
+    stack_free_page_frame_bases[stack_free_page_frame_bases_top] = phys_address;
+    stack_free_page_frame_bases_top++;
+
+    return RET_OK;
+}
+
 static void add_physical_memory_to_pool(struct stivale2_mmap_entry* memmap_entry)
 {
+    uint8_t ret = RET_ERR;
     char hex_str_base[HEX_STR_SIZE_64] = {0};
     char hex_str_length[HEX_STR_SIZE_64] = {0};
 
@@ -230,6 +260,14 @@ static void add_physical_memory_to_pool(struct stivale2_mmap_entry* memmap_entry
     TERM_WRITE_STR(", LEN: ");
     TERM_WRITE_STR(hex_str_length);
     TERM_WRITE_STR("\n");
+
+    const uint64_t range_top = memmap_entry->base + memmap_entry->length;
+    for (uint64_t i = memmap_entry->base; i < range_top; i = i + PAGE_BYTES) {
+        ret = push_address_to_stack_free_page_frame_bases(i);
+        if (RET_ERR == ret) {
+            break;
+        }
+    }
 }
 
 static void calculate_free_physical_memory(struct stivale2_struct* stivale2_struct)
@@ -255,10 +293,12 @@ static void calculate_free_physical_memory(struct stivale2_struct* stivale2_stru
 // https://github.com/stivale/stivale/blob/master/STIVALE2.md#kernel-entry-machine-state
 void _start(struct stivale2_struct* stivale2_struct)
 {
+    uint64_t free_physical_memory = 0;
     uint8_t ret = RET_ERR;
     uint8_t ps2_init_ok = 0;
     char ps2_input_hex_str[HEX_STR_SIZE_32] = {0};
     char hhdm_address_hex_str[HEX_STR_SIZE_64] = {0};
+    char free_physical_memory_hex_str[HEX_STR_SIZE_64] = {0};
     struct stivale2_struct_tag_hhdm* tag_hhdm = 0;
     initialize_terminal_printing(stivale2_struct);
     term_write("Terminal test print\n", 20);
@@ -287,6 +327,12 @@ void _start(struct stivale2_struct* stivale2_struct)
     dump_paging(tag_hhdm);
 
     calculate_free_physical_memory(stivale2_struct);
+
+    free_physical_memory = get_free_physical_memory_bytes();
+    uint64_to_hex_str(free_physical_memory, free_physical_memory_hex_str);
+    TERM_WRITE_STR("Free physical memory (bytes): ");
+    TERM_WRITE_STR(free_physical_memory_hex_str);
+    TERM_WRITE_STR("\n");
 
     if (ps2_init_ok) {
         term_write("Polling for PS/2 input...\n", 26);
